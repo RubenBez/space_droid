@@ -10,6 +10,7 @@ type State int32
 
 const (
 	Menu State = iota
+	Instructions
 	Game
 )
 
@@ -24,14 +25,21 @@ type GameData struct {
 	GameRunning bool
 	GameOver    bool
 	Paused      bool
+	Win         bool
 
 	GameState State
 
 	MenuIndex int32
+
+	FxShoot           rl.Sound
+	FxAsteroidDestroy rl.Sound
+	FxSpaceShipDead   rl.Sound
+	FxWin             rl.Sound
 }
 
 const shouldDrawBoundingBox = false
 const shouldDrawAsteroidInfo = false
+const shouldDrawStats = false
 
 const screenWidth float32 = 800
 const screenHeight float32 = 450
@@ -46,17 +54,29 @@ func main() {
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(rl.KeyNull)
 
+	rl.InitAudioDevice()
+	defer rl.CloseAudioDevice()
+
 	var data = &GameData{
-		Player:      nil,
-		Bullets:     []*Bullet{},
-		Asteroids:   []*Asteroid{},
-		Camera:      rl.NewCamera2D(rl.Vector2Zero(), rl.Vector2Zero(), 0, 1),
-		GameRunning: true,
-		GameOver:    false,
-		Paused:      false,
-		GameState:   Menu,
-		MenuIndex:   0,
+		Player:            nil,
+		Bullets:           []*Bullet{},
+		Asteroids:         []*Asteroid{},
+		Camera:            rl.NewCamera2D(rl.Vector2Zero(), rl.Vector2Zero(), 0, 1),
+		GameRunning:       true,
+		GameOver:          false,
+		Paused:            false,
+		Win:               false,
+		GameState:         Menu,
+		MenuIndex:         0,
+		FxShoot:           rl.LoadSound("assets/audio/shoot.wav"),
+		FxAsteroidDestroy: rl.LoadSound("assets/audio/asteroid_destroy.wav"),
+		FxSpaceShipDead:   rl.LoadSound("assets/audio/space_ship_dead.wav"),
+		FxWin:             rl.LoadSound("assets/audio/win.wav"),
 	}
+	defer rl.UnloadSound(data.FxShoot)
+	defer rl.UnloadSound(data.FxAsteroidDestroy)
+	defer rl.UnloadSound(data.FxSpaceShipDead)
+	defer rl.UnloadSound(data.FxWin)
 
 	RestartGame(data)
 
@@ -68,6 +88,8 @@ func main() {
 		switch data.GameState {
 		case Menu:
 			ProcessMenuState(data)
+		case Instructions:
+			ProcessInstructionsState(data)
 		case Game:
 			ProcessGameState(data)
 		}
@@ -81,6 +103,22 @@ func main() {
 	}
 }
 
+func ProcessInstructionsState(data *GameData) {
+	DrawTextCenter("Instructions", 70, 42, rl.Green)
+
+	var y float32 = 200
+	DrawTextCenter("Use W,A,S,D or ARROW KEYS to move and 'SPACE' to shoot", y, 18, rl.White)
+	y += 20
+	DrawTextCenter("Destroy all the asteroids to win and don't get hit by one", y, 18, rl.White)
+
+	y = 400
+	DrawMenuItem("Back", y, true)
+
+	if rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeySpace) {
+		data.GameState = Menu
+	}
+}
+
 func ProcessMenuState(data *GameData) {
 	DrawTextCenter("SPACE DROID", 70, 42, rl.Green)
 
@@ -88,29 +126,37 @@ func ProcessMenuState(data *GameData) {
 
 	DrawMenuItem("Play", y, data.MenuIndex == 0)
 	y += 50
-	DrawMenuItem("Quit", y, data.MenuIndex == 1)
+	DrawMenuItem("Instructions", y, data.MenuIndex == 1)
 	y += 50
+	DrawMenuItem("Quit", y, data.MenuIndex == 2)
+
+	y = 400
+	DrawTextCenter("Made by Ruben Bezuidenhout", y, 18, rl.Blue)
 
 	if rl.IsKeyPressed(rl.KeyDown) || rl.IsKeyPressed(rl.KeyS) {
 		data.MenuIndex++
-		data.MenuIndex %= 2
+		data.MenuIndex %= 3
 	}
 
 	if rl.IsKeyPressed(rl.KeyUp) || rl.IsKeyPressed(rl.KeyW) {
 		data.MenuIndex--
 		if data.MenuIndex < 0 {
-			data.MenuIndex = 1
+			data.MenuIndex = 2
 		}
-		data.MenuIndex %= 2
+		data.MenuIndex %= 3
 	}
 
-	if rl.IsKeyPressed(rl.KeyEnter) {
+	if rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeySpace) {
 		if data.MenuIndex == 0 {
 			RestartGame(data)
 			data.GameState = Game
 		}
 
 		if data.MenuIndex == 1 {
+			data.GameState = Instructions
+		}
+
+		if data.MenuIndex == 2 {
 			data.GameRunning = false
 		}
 	}
@@ -129,29 +175,39 @@ func DrawMenuItem(text string, y float32, selected bool) {
 
 }
 
-func DrawTextCenter(text string, y int32, fontSize int32, color rl.Color) {
+func DrawTextCenter(text string, y float32, fontSize int32, color rl.Color) {
 	var size = rl.MeasureTextEx(rl.GetFontDefault(), text, float32(fontSize), 0)
-	rl.DrawText(text, int32(screenWidth/2-size.X/2), y, fontSize, color)
+	rl.DrawText(text, int32(screenWidth/2-size.X/2), int32(y), fontSize, color)
 }
 
 func ProcessGameState(data *GameData) {
 	if data.Paused {
-		var size = rl.MeasureTextEx(rl.GetFontDefault(), "PAUSE", 20, 0)
-		rl.DrawText("PAUSE", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
+		DrawTextCenter("PAUSE", screenHeight/2, 20, rl.Red)
 	} else {
-		if !data.GameOver {
-			ProcessPlayer(data)
-			ProcessBullets(data)
-			ProcessAsteroids(data)
+		if !data.Win {
+			if !data.GameOver {
+				ProcessPlayer(data)
+				ProcessBullets(data)
+				ProcessAsteroids(data)
+				ProcessCollision(data)
+			} else {
+				DrawTextCenter("GAME OVER", screenHeight/2, 20, rl.Red)
+				DrawTextCenter("PRESS 'R' TO TRY AGAIN", (screenHeight+40)/2, 20, rl.Red)
+			}
 		} else {
-			var size = rl.MeasureTextEx(rl.GetFontDefault(), "GAME OVER", 20, 0)
-			rl.DrawText("GAME OVER", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
+			DrawTextCenter("YOU WON!!", screenHeight/2, 20, rl.Gold)
+			DrawTextCenter("PRESS 'R' TO TRY AGAIN", (screenHeight+40)/2, 20, rl.Gold)
 		}
 	}
 
-	if rl.IsKeyPressed(rl.KeyP) || rl.IsKeyPressed(rl.KeyEscape) {
+	if rl.IsKeyPressed(rl.KeyP) {
 		data.Paused = !data.Paused
 	}
+
+	if rl.IsKeyPressed(rl.KeyEscape) {
+		data.GameState = Menu
+	}
+
 	if rl.IsKeyPressed(rl.KeyR) {
 		RestartGame(data)
 	}
@@ -166,13 +222,16 @@ func ProcessGameState(data *GameData) {
 			data.Asteroids[i].DrawInfo()
 		}
 	}
-	ProcessCollision(data)
-	DrawStats(data)
+
+	if shouldDrawStats {
+		DrawStats(data)
+	}
 }
 
 func RestartGame(data *GameData) {
 	data.GameOver = false
 	data.Paused = false
+	data.Win = false
 	for i := range data.Bullets {
 		data.Bullets[i] = nil
 	}
@@ -212,6 +271,7 @@ func ProcessCollision(data *GameData) {
 					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 3)/3, a.Size-1)
 					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 3)/3, a.Size-1)
 				}
+				rl.PlaySound(data.FxAsteroidDestroy)
 				a.ShouldDelete = true
 				b.ShouldDelete = true
 			}
@@ -220,6 +280,7 @@ func ProcessCollision(data *GameData) {
 
 	for _, a := range data.Asteroids {
 		if CheckCollisionPoly(data.Player.GetScaledRenderPoints(), a.GetScaledRenderPoints()) {
+			rl.PlaySound(data.FxSpaceShipDead)
 			data.GameOver = true
 		}
 	}
@@ -274,23 +335,29 @@ func ProcessPlayer(data *GameData) {
 
 	var theta = float64(DegToRad(player.Rotation))
 	var lookDirection = rl.NewVector2(float32(math.Cos(theta)), float32(math.Sin(theta)))
-	if rl.IsKeyDown(rl.KeyW) {
+	if rl.IsKeyDown(rl.KeyW) || rl.IsKeyDown(rl.KeyUp) {
 		player.Position = rl.Vector2Add(player.Position, rl.Vector2Multiply(rl.Vector2Normalize(lookDirection), rl.NewVector2(player.Speed, player.Speed)))
 	}
 
-	if rl.IsKeyDown(rl.KeyA) {
+	if rl.IsKeyDown(rl.KeyA) || rl.IsKeyDown(rl.KeyLeft) {
 		player.Rotation -= 3
 	}
 
-	if rl.IsKeyDown(rl.KeyD) {
+	if rl.IsKeyDown(rl.KeyD) || rl.IsKeyDown(rl.KeyRight) {
 		player.Rotation += 3
 	}
 
 	if rl.IsKeyPressed(rl.KeySpace) {
+		rl.PlaySound(data.FxShoot)
 		SpawnBullet(data, player.Position, player.Rotation, 8)
 	}
 
 	data.Player.Position = WrapCoordinates(data.Player.Position)
+
+	if len(data.Asteroids) == 0 {
+		rl.PlaySound(data.FxWin)
+		data.Win = true
+	}
 }
 
 func DrawStats(data *GameData) {
