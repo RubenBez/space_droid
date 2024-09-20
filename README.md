@@ -12,6 +12,5 @@ A astroid clone writen in GoLang (1.22.0)
 To Run use the following commands
 
 ```
-$ go build SpaceDroid
 $ go run SpaceDroid
 ```
