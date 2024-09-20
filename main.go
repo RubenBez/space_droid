@@ -101,8 +101,9 @@ func RestartGame(state *GameState) {
 	state.Player = nil
 	state.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 4)
 
+	//SpawnAsteroid(state, rl.NewVector2(150, 150), float32(0), 0, float32(30))
 	for range 10 {
-		var scale = rl.GetRandomValue(10, 60)
+		var scale = rl.GetRandomValue(10, 40)
 		var x = rl.GetRandomValue(0, int32(screenWidth)-scale/2) + scale/2
 		var y = rl.GetRandomValue(0, int32(screenHeight)-scale/2) + scale/2
 		var rotation = rl.GetRandomValue(0, 360)
@@ -121,7 +122,7 @@ func ProcessCollision(state *GameState) {
 	}
 
 	for _, a := range state.Asteroids {
-		if CheckCollisionRotatedRect(a.GetBoundingBox(), a.Rotation, state.Player.GetBoundingBox(), state.Player.Rotation) {
+		if CheckCollisionPoly(state.Player.GetScaledRenderPoints(), a.GetScaledRenderPoints()) {
 			state.GameOver = true
 		}
 	}
@@ -221,12 +222,7 @@ func GetPointsFromRect(rectangle rl.Rectangle) (rl.Vector2, rl.Vector2, rl.Vecto
 }
 
 func DrawAsteroid(asteroid *Asteroid) {
-	DrawLines(asteroid.Position, asteroid.Rotation, asteroid.Scale, []rl.Vector2{
-		rl.NewVector2(-0.5, 0.5),
-		rl.NewVector2(0.5, 0.5),
-		rl.NewVector2(0.5, -0.5),
-		rl.NewVector2(-0.5, -0.5),
-	})
+	DrawLines(asteroid.Position, asteroid.Rotation, asteroid.Scale, asteroid.RenderPoints)
 
 	DrawBoundingBox(asteroid.GetBoundingBox(), asteroid.Rotation)
 }
@@ -342,13 +338,7 @@ func DrawBullet(bullet *Bullet) {
 }
 
 func DrawPlayer(player *PlayerShip) {
-	DrawLines(player.Position, player.Rotation-90, player.Scale, []rl.Vector2{
-		rl.NewVector2(0.0, 0.5),
-		rl.NewVector2(-0.5, -0.5),
-		rl.NewVector2(-0.3, -0.2),
-		rl.NewVector2(0.3, -0.2),
-		rl.NewVector2(0.5, -0.5),
-	})
+	DrawLines(player.Position, player.Rotation-90, player.Scale, player.RenderPoints)
 
 	DrawBoundingBox(player.GetBoundingBox(), player.Rotation)
 }
