@@ -6,7 +6,14 @@ import (
 	"math"
 )
 
-type GameState struct {
+type State int32
+
+const (
+	Menu State = iota
+	Game
+)
+
+type GameData struct {
 	Player *PlayerShip
 
 	Bullets   []*Bullet
@@ -14,13 +21,17 @@ type GameState struct {
 
 	Camera rl.Camera2D
 
-	GameOver bool
+	GameRunning bool
+	GameOver    bool
+	Paused      bool
 
-	Paused bool
+	GameState State
+
+	MenuIndex int32
 }
 
 const shouldDrawBoundingBox = false
-const shouldDrawAsteroidInfo = true
+const shouldDrawAsteroidInfo = false
 
 const screenWidth float32 = 800
 const screenHeight float32 = 450
@@ -33,112 +44,173 @@ func main() {
 	defer rl.CloseWindow()
 
 	rl.SetTargetFPS(60)
+	rl.SetExitKey(rl.KeyNull)
 
-	var state = &GameState{
-		Player:    nil,
-		Bullets:   []*Bullet{},
-		Asteroids: []*Asteroid{},
-		Camera:    rl.NewCamera2D(rl.Vector2Zero(), rl.Vector2Zero(), 0, 1),
-		GameOver:  false,
-		Paused:    false,
+	var data = &GameData{
+		Player:      nil,
+		Bullets:     []*Bullet{},
+		Asteroids:   []*Asteroid{},
+		Camera:      rl.NewCamera2D(rl.Vector2Zero(), rl.Vector2Zero(), 0, 1),
+		GameRunning: true,
+		GameOver:    false,
+		Paused:      false,
+		GameState:   Menu,
+		MenuIndex:   0,
 	}
 
-	RestartGame(state)
+	RestartGame(data)
 
-	for !rl.WindowShouldClose() {
+	for data.GameRunning {
 		rl.BeginDrawing()
-		rl.BeginMode2D(state.Camera)
-
+		rl.BeginMode2D(data.Camera)
 		rl.ClearBackground(rl.Black)
 
-		if state.Paused {
-			var size = rl.MeasureTextEx(rl.GetFontDefault(), "PAUSE", 20, 0)
-			rl.DrawText("PAUSE", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
-		} else {
-			if !state.GameOver {
-				ProcessPlayer(state)
-				ProcessBullets(state)
-				ProcessAsteroids(state)
-			} else {
-				var size = rl.MeasureTextEx(rl.GetFontDefault(), "GAME OVER", 20, 0)
-				rl.DrawText("GAME OVER", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
-			}
+		switch data.GameState {
+		case Menu:
+			ProcessMenuState(data)
+		case Game:
+			ProcessGameState(data)
 		}
 
-		if rl.IsKeyPressed(rl.KeyP) {
-			state.Paused = !state.Paused
-		}
-		if rl.IsKeyPressed(rl.KeyR) {
-			RestartGame(state)
+		if rl.WindowShouldClose() {
+			data.GameRunning = false
 		}
 
-		DrawPlayer(state.Player)
-		for i := range state.Bullets {
-			DrawBullet(state.Bullets[i])
-		}
-		for i := range state.Asteroids {
-			DrawAsteroid(state.Asteroids[i])
-			if shouldDrawAsteroidInfo {
-				state.Asteroids[i].DrawInfo()
-			}
-		}
-		ProcessCollision(state)
-		DrawStats(state)
 		rl.EndMode2D()
 		rl.EndDrawing()
 	}
 }
 
-func RestartGame(state *GameState) {
-	state.GameOver = false
-	state.Paused = false
-	for i := range state.Bullets {
-		state.Bullets[i] = nil
+func ProcessMenuState(data *GameData) {
+	DrawTextCenter("SPACE DROID", 70, 42, rl.Green)
+
+	var y float32 = 150
+
+	DrawMenuItem("Play", y, data.MenuIndex == 0)
+	y += 50
+	DrawMenuItem("Quit", y, data.MenuIndex == 1)
+	y += 50
+
+	if rl.IsKeyPressed(rl.KeyDown) || rl.IsKeyPressed(rl.KeyS) {
+		data.MenuIndex++
+		data.MenuIndex %= 2
 	}
-	state.Bullets = []*Bullet{}
 
-	for i := range state.Asteroids {
-		state.Asteroids[i] = nil
+	if rl.IsKeyPressed(rl.KeyUp) || rl.IsKeyPressed(rl.KeyW) {
+		data.MenuIndex--
+		if data.MenuIndex < 0 {
+			data.MenuIndex = 1
+		}
+		data.MenuIndex %= 2
 	}
-	state.Asteroids = []*Asteroid{}
 
-	state.Player = nil
-	state.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 4)
+	if rl.IsKeyPressed(rl.KeyEnter) {
+		if data.MenuIndex == 0 {
+			RestartGame(data)
+			data.GameState = Game
+		}
 
-	//SpawnAsteroid(state, rl.NewVector2(150, 150), float32(0), 0, Small)
-	//SpawnAsteroid(state, rl.NewVector2(150, 250), float32(0), 0, Medium)
-	//SpawnAsteroid(state, rl.NewVector2(150, 350), float32(0), 0, Large)
+		if data.MenuIndex == 1 {
+			data.GameRunning = false
+		}
+	}
+}
+
+func DrawMenuItem(text string, y float32, selected bool) {
+	var size = rl.MeasureTextEx(rl.GetFontDefault(), text, 16, 0)
+	var px = screenWidth/2 - size.X/2
+	var py = y
+	rl.DrawText(text, int32(px), int32(py), 16, rl.RayWhite)
+
+	if selected {
+		rl.DrawLineEx(rl.NewVector2(px-10, py+size.Y/2), rl.NewVector2(px-20, (py+size.Y/2)-10), 2, rl.RayWhite)
+		rl.DrawLineEx(rl.NewVector2(px-10, py+size.Y/2), rl.NewVector2(px-20, (py+size.Y/2)+10), 2, rl.RayWhite)
+	}
+
+}
+
+func DrawTextCenter(text string, y int32, fontSize int32, color rl.Color) {
+	var size = rl.MeasureTextEx(rl.GetFontDefault(), text, float32(fontSize), 0)
+	rl.DrawText(text, int32(screenWidth/2-size.X/2), y, fontSize, color)
+}
+
+func ProcessGameState(data *GameData) {
+	if data.Paused {
+		var size = rl.MeasureTextEx(rl.GetFontDefault(), "PAUSE", 20, 0)
+		rl.DrawText("PAUSE", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
+	} else {
+		if !data.GameOver {
+			ProcessPlayer(data)
+			ProcessBullets(data)
+			ProcessAsteroids(data)
+		} else {
+			var size = rl.MeasureTextEx(rl.GetFontDefault(), "GAME OVER", 20, 0)
+			rl.DrawText("GAME OVER", 800/2-int32(size.X)/2, 450/2-int32(size.Y)/2, 20, rl.Red)
+		}
+	}
+
+	if rl.IsKeyPressed(rl.KeyP) || rl.IsKeyPressed(rl.KeyEscape) {
+		data.Paused = !data.Paused
+	}
+	if rl.IsKeyPressed(rl.KeyR) {
+		RestartGame(data)
+	}
+
+	DrawPlayer(data.Player)
+	for i := range data.Bullets {
+		DrawBullet(data.Bullets[i])
+	}
+	for i := range data.Asteroids {
+		DrawAsteroid(data.Asteroids[i])
+		if shouldDrawAsteroidInfo {
+			data.Asteroids[i].DrawInfo()
+		}
+	}
+	ProcessCollision(data)
+	DrawStats(data)
+}
+
+func RestartGame(data *GameData) {
+	data.GameOver = false
+	data.Paused = false
+	for i := range data.Bullets {
+		data.Bullets[i] = nil
+	}
+	data.Bullets = []*Bullet{}
+
+	for i := range data.Asteroids {
+		data.Asteroids[i] = nil
+	}
+	data.Asteroids = []*Asteroid{}
+
+	data.Player = nil
+	data.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 4)
+
+	//SpawnAsteroid(data, rl.NewVector2(150, 150), float32(0), 0, Small)
+	//SpawnAsteroid(data, rl.NewVector2(150, 250), float32(0), 0, Medium)
+	//SpawnAsteroid(data, rl.NewVector2(150, 350), float32(0), 0, Large)
 	for range 10 {
 		var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
 		var x = rl.GetRandomValue(0, int32(screenWidth)/2)
 		var y = rl.GetRandomValue(0, int32(screenHeight)/2)
 		var rotation = rl.GetRandomValue(0, 360)
-		SpawnAsteroid(state, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
+		SpawnAsteroid(data, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
 	}
 }
 
-func GetRandomValueF(min int32, max int32) float32 {
-	return float32(rl.GetRandomValue(min, max))
-}
-
-func GetRandomAngle() float32 {
-	return GetRandomValueF(-360, 360)
-}
-
-func ProcessCollision(state *GameState) {
-	for _, b := range state.Bullets {
-		for _, a := range state.Asteroids {
+func ProcessCollision(data *GameData) {
+	for _, b := range data.Bullets {
+		for _, a := range data.Asteroids {
 			if CheckCollisionPoly(a.GetScaledRenderPoints(), GetPointsFromRectSlice(b.GetBoundingBox())) {
-
 				if a.Size == Large {
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 5)/5, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 5)/5, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 5)/5, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 5)/5, a.Size-1)
 				}
 				if a.Size == Medium {
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
-					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 3)/3, a.Size-1)
+					SpawnAsteroid(data, a.Position, a.Rotation+GetRandomAngle(), a.Speed+GetRandomValueF(0, 3)/3, a.Size-1)
 				}
 				a.ShouldDelete = true
 				b.ShouldDelete = true
@@ -146,109 +218,11 @@ func ProcessCollision(state *GameState) {
 		}
 	}
 
-	for _, a := range state.Asteroids {
-		if CheckCollisionPoly(state.Player.GetScaledRenderPoints(), a.GetScaledRenderPoints()) {
-			state.GameOver = true
+	for _, a := range data.Asteroids {
+		if CheckCollisionPoly(data.Player.GetScaledRenderPoints(), a.GetScaledRenderPoints()) {
+			data.GameOver = true
 		}
 	}
-}
-
-func CheckCollisionRotatedRect(rectA rl.Rectangle, rotA float32, rectB rl.Rectangle, rotB float32) bool {
-	var a1, a2, a3, a4 = GetPointsFromRect(rectA)
-	var b1, b2, b3, b4 = GetPointsFromRect(rectB)
-
-	var transform = func(point rl.Vector2, rotation float32, pos rl.Vector2) rl.Vector2 {
-		return rl.Vector2Add(rl.Vector2Scale(rl.Vector2Rotate(rl.Vector2Subtract(point, pos), DegToRad(rotation)), 1), pos)
-	}
-
-	var aPos = rl.NewVector2(rectA.X, rectA.Y)
-	var aPoints = []rl.Vector2{
-		transform(a1, rotA, aPos),
-		transform(a2, rotA, aPos),
-		transform(a3, rotA, aPos),
-		transform(a4, rotA, aPos),
-	}
-	var bPos = rl.NewVector2(rectB.X, rectB.Y)
-	var bPoints = []rl.Vector2{
-		transform(b1, rotB, bPos),
-		transform(b2, rotB, bPos),
-		transform(b3, rotB, bPos),
-		transform(b4, rotB, bPos),
-	}
-
-	return CheckCollisionPoly(aPoints, bPoints)
-}
-
-func CheckCollisionPoly(pointsA []rl.Vector2, pointsB []rl.Vector2) bool {
-	// go through each of the vertices, plus the next
-	// vertex in the list
-	var next = 0
-	for current := 0; current < len(pointsA); current++ {
-		// get next vertex in list
-		// if we've hit the end, wrap around to 0
-		next = current + 1
-		if next == len(pointsA) {
-			next = 0
-		}
-
-		// get the PVectors at our current position
-		// this makes our if statement a little cleaner
-		var vc = pointsA[current] // c for "current"
-		var vn = pointsA[next]    // n for "next"
-
-		var collision bool = CollisionPolyLine(pointsB, vc, vn)
-		if collision {
-			return true
-		}
-
-		// optional: check if the 2nd polygon is INSIDE the first
-		collision = rl.CheckCollisionPointPoly(pointsB[0], pointsA)
-		if collision {
-			return true
-		}
-	}
-
-	return false
-}
-
-func CollisionPolyLine(points []rl.Vector2, lineStart rl.Vector2, lineEnd rl.Vector2) bool {
-	// go through each of the vertices, plus the next
-	// vertex in the list
-	var next = 0
-	for current := 0; current < len(points); current++ {
-		// get next vertex in list
-		// if we've hit the end, wrap around to 0
-		next = current + 1
-		if next == len(points) {
-			next = 0
-		}
-
-		var lineStart2 = points[current]
-		var lineEnd2 = points[next]
-
-		var hitPoint = rl.NewVector2(0, 0)
-		var hit bool = rl.CheckCollisionLines(lineStart, lineEnd, lineStart2, lineEnd2, &hitPoint)
-		if hit {
-			return true
-		}
-	}
-
-	// never got a hit
-	return false
-}
-
-func GetPointsFromRect(rectangle rl.Rectangle) (rl.Vector2, rl.Vector2, rl.Vector2, rl.Vector2) {
-	w := rectangle.Width / 2
-	h := rectangle.Height / 2
-	return rl.NewVector2(rectangle.X-w, rectangle.Y+h),
-		rl.NewVector2(rectangle.X+w, rectangle.Y+h),
-		rl.NewVector2(rectangle.X+w, rectangle.Y-h),
-		rl.NewVector2(rectangle.X-w, rectangle.Y-h)
-}
-
-func GetPointsFromRectSlice(rectangle rl.Rectangle) []rl.Vector2 {
-	var a1, a2, a3, a4 = GetPointsFromRect(rectangle)
-	return []rl.Vector2{a1, a2, a3, a4}
 }
 
 func DrawAsteroid(asteroid *Asteroid) {
@@ -257,65 +231,46 @@ func DrawAsteroid(asteroid *Asteroid) {
 	DrawBoundingBox(asteroid.GetBoundingBox(), asteroid.Rotation)
 }
 
-func ProcessAsteroids(state *GameState) {
-	for i := len(state.Asteroids) - 1; i >= 0; i-- {
-		if state.Asteroids[i].ShouldDelete {
-			state.Asteroids[i] = nil
-			state.Asteroids = append(state.Asteroids[:i], state.Asteroids[i+1:]...)
+func ProcessAsteroids(data *GameData) {
+	for i := len(data.Asteroids) - 1; i >= 0; i-- {
+		if data.Asteroids[i].ShouldDelete {
+			data.Asteroids[i] = nil
+			data.Asteroids = append(data.Asteroids[:i], data.Asteroids[i+1:]...)
 		}
 	}
 
-	for i := range state.Asteroids {
-		var theta = float64(DegToRad(state.Asteroids[i].Rotation))
+	for i := range data.Asteroids {
+		var theta = float64(DegToRad(data.Asteroids[i].Rotation))
 		var direction = rl.NewVector2(float32(math.Cos(theta)), float32(math.Sin(theta)))
-		state.Asteroids[i].Position = rl.Vector2Add(state.Asteroids[i].Position, rl.Vector2Multiply(direction, rl.NewVector2(state.Asteroids[i].Speed, state.Asteroids[i].Speed)))
+		data.Asteroids[i].Position = rl.Vector2Add(data.Asteroids[i].Position, rl.Vector2Multiply(direction, rl.NewVector2(data.Asteroids[i].Speed, data.Asteroids[i].Speed)))
 
-		state.Asteroids[i].Position = WrapCoordinates(state.Asteroids[i].Position)
+		data.Asteroids[i].Position = WrapCoordinates(data.Asteroids[i].Position)
 	}
 }
 
-func WrapCoordinates(position rl.Vector2) (newPos rl.Vector2) {
-	newPos.X = position.X
-	newPos.Y = position.Y
-	if position.X < 0.0 {
-		newPos.X = position.X + screenWidth
-	}
-	if position.X >= screenWidth {
-		newPos.X = position.X - screenWidth
-	}
-
-	if position.Y < 0.0 {
-		newPos.Y = position.Y + screenHeight
-	}
-	if position.Y >= screenHeight {
-		newPos.Y = position.Y - screenHeight
-	}
-	return newPos
-}
-
-func ProcessBullets(state *GameState) {
+func ProcessBullets(data *GameData) {
 	// Cleanup before processing again
-	for i := len(state.Bullets) - 1; i >= 0; i-- {
-		if state.Bullets[i].ShouldDelete {
-			state.Bullets[i] = nil
-			state.Bullets = append(state.Bullets[:i], state.Bullets[i+1:]...)
+	for i := len(data.Bullets) - 1; i >= 0; i-- {
+		if data.Bullets[i].ShouldDelete {
+			data.Bullets[i] = nil
+			data.Bullets = append(data.Bullets[:i], data.Bullets[i+1:]...)
 		}
 	}
 
-	for i := range state.Bullets {
-		state.Bullets[i].Lifetime -= rl.GetFrameTime()
+	for i := range data.Bullets {
+		data.Bullets[i].Lifetime -= rl.GetFrameTime()
 
-		if state.Bullets[i].Lifetime <= 0 {
-			state.Bullets[i].ShouldDelete = true
+		if data.Bullets[i].Lifetime <= 0 {
+			data.Bullets[i].ShouldDelete = true
 		}
-		var theta = float64(DegToRad(state.Bullets[i].Rotation))
+		var theta = float64(DegToRad(data.Bullets[i].Rotation))
 		var direction = rl.NewVector2(float32(math.Cos(theta)), float32(math.Sin(theta)))
-		state.Bullets[i].Position = rl.Vector2Add(state.Bullets[i].Position, rl.Vector2Multiply(direction, rl.NewVector2(state.Bullets[i].Speed, state.Bullets[i].Speed)))
+		data.Bullets[i].Position = rl.Vector2Add(data.Bullets[i].Position, rl.Vector2Multiply(direction, rl.NewVector2(data.Bullets[i].Speed, data.Bullets[i].Speed)))
 	}
 }
 
-func ProcessPlayer(state *GameState) {
-	var player = state.Player
+func ProcessPlayer(data *GameData) {
+	var player = data.Player
 
 	var theta = float64(DegToRad(player.Rotation))
 	var lookDirection = rl.NewVector2(float32(math.Cos(theta)), float32(math.Sin(theta)))
@@ -332,29 +287,29 @@ func ProcessPlayer(state *GameState) {
 	}
 
 	if rl.IsKeyPressed(rl.KeySpace) {
-		SpawnBullet(state, player.Position, player.Rotation, 8)
+		SpawnBullet(data, player.Position, player.Rotation, 8)
 	}
 
-	state.Player.Position = WrapCoordinates(state.Player.Position)
+	data.Player.Position = WrapCoordinates(data.Player.Position)
 }
 
-func DrawStats(state *GameState) {
+func DrawStats(data *GameData) {
 	var y int32 = 10
-	rl.DrawText(fmt.Sprintf("Number of Bullets: %d", len(state.Bullets)), 2, y, 10, rl.RayWhite)
+	rl.DrawText(fmt.Sprintf("Number of Bullets: %d", len(data.Bullets)), 2, y, 10, rl.RayWhite)
 	y += 10
-	rl.DrawText(fmt.Sprintf("Number of astroids: %d", len(state.Asteroids)), 2, y, 10, rl.RayWhite)
+	rl.DrawText(fmt.Sprintf("Number of astroids: %d", len(data.Asteroids)), 2, y, 10, rl.RayWhite)
 	y += 10
-	rl.DrawText(fmt.Sprintf("Player pos: %f.0, %f.0", state.Player.Position.X, state.Player.Position.Y), 2, y, 10, rl.RayWhite)
+	rl.DrawText(fmt.Sprintf("Player pos: %f.0, %f.0", data.Player.Position.X, data.Player.Position.Y), 2, y, 10, rl.RayWhite)
 }
 
-func SpawnBullet(state *GameState, spawnPosition rl.Vector2, rotation float32, speed float32) {
+func SpawnBullet(data *GameData, spawnPosition rl.Vector2, rotation float32, speed float32) {
 	var bullet = NewBullet(spawnPosition, 10, rotation, speed, 1)
-	state.Bullets = append(state.Bullets, bullet)
+	data.Bullets = append(data.Bullets, bullet)
 }
 
-func SpawnAsteroid(state *GameState, spawnPosition rl.Vector2, rotation float32, speed float32, size AsteroidSize) {
+func SpawnAsteroid(data *GameData, spawnPosition rl.Vector2, rotation float32, speed float32, size AsteroidSize) {
 	var asteroid = NewAsteroid(spawnPosition, rotation, size, speed)
-	state.Asteroids = append(state.Asteroids, asteroid)
+	data.Asteroids = append(data.Asteroids, asteroid)
 }
 
 func DrawBullet(bullet *Bullet) {
