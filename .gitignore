@@ -9,3 +9,5 @@ go.work
 *.dll
 *.so
 *.dylib
+
+build/

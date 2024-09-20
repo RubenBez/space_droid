@@ -1,0 +1,1 @@
+docker run --rm -v /Users/ruben/Workspace/SpaceDroid:/usr/src/myapp -w /usr/src/myapp golang:latest bash -c apt-get update && apt-get install -y mesa-utils libsdl2-dev && go build -tags sdl -ldflags "-s -w" SpaceDroid
