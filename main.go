@@ -20,6 +20,7 @@ type GameState struct {
 }
 
 const shouldDrawBoundingBox = false
+const shouldDrawAsteroidInfo = true
 
 const screenWidth float32 = 800
 const screenHeight float32 = 450
@@ -77,6 +78,9 @@ func main() {
 		}
 		for i := range state.Asteroids {
 			DrawAsteroid(state.Asteroids[i])
+			if shouldDrawAsteroidInfo {
+				state.Asteroids[i].DrawInfo()
+			}
 		}
 		ProcessCollision(state)
 		DrawStats(state)
@@ -101,20 +105,41 @@ func RestartGame(state *GameState) {
 	state.Player = nil
 	state.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 4)
 
-	//SpawnAsteroid(state, rl.NewVector2(150, 150), float32(0), 0, float32(30))
+	//SpawnAsteroid(state, rl.NewVector2(150, 150), float32(0), 0, Small)
+	//SpawnAsteroid(state, rl.NewVector2(150, 250), float32(0), 0, Medium)
+	//SpawnAsteroid(state, rl.NewVector2(150, 350), float32(0), 0, Large)
 	for range 10 {
-		var scale = rl.GetRandomValue(10, 40)
-		var x = rl.GetRandomValue(0, int32(screenWidth)-scale/2) + scale/2
-		var y = rl.GetRandomValue(0, int32(screenHeight)-scale/2) + scale/2
+		var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
+		var x = rl.GetRandomValue(0, int32(screenWidth)/2)
+		var y = rl.GetRandomValue(0, int32(screenHeight)/2)
 		var rotation = rl.GetRandomValue(0, 360)
-		SpawnAsteroid(state, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, float32(scale))
+		SpawnAsteroid(state, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
 	}
+}
+
+func GetRandomValueF(min int32, max int32) float32 {
+	return float32(rl.GetRandomValue(min, max))
+}
+
+func GetRandomAngle() float32 {
+	return GetRandomValueF(-360, 360)
 }
 
 func ProcessCollision(state *GameState) {
 	for _, b := range state.Bullets {
 		for _, a := range state.Asteroids {
-			if CheckCollisionRotatedRect(a.GetBoundingBox(), a.Rotation, b.GetBoundingBox(), b.Rotation) {
+			if CheckCollisionPoly(a.GetScaledRenderPoints(), GetPointsFromRectSlice(b.GetBoundingBox())) {
+
+				if a.Size == Large {
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+				}
+				if a.Size == Medium {
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+					SpawnAsteroid(state, a.Position, a.Rotation+GetRandomAngle(), a.Speed, a.Size-1)
+				}
 				a.ShouldDelete = true
 				b.ShouldDelete = true
 			}
@@ -221,6 +246,11 @@ func GetPointsFromRect(rectangle rl.Rectangle) (rl.Vector2, rl.Vector2, rl.Vecto
 		rl.NewVector2(rectangle.X-w, rectangle.Y-h)
 }
 
+func GetPointsFromRectSlice(rectangle rl.Rectangle) []rl.Vector2 {
+	var a1, a2, a3, a4 = GetPointsFromRect(rectangle)
+	return []rl.Vector2{a1, a2, a3, a4}
+}
+
 func DrawAsteroid(asteroid *Asteroid) {
 	DrawLines(asteroid.Position, asteroid.Rotation, asteroid.Scale, asteroid.RenderPoints)
 
@@ -322,8 +352,8 @@ func SpawnBullet(state *GameState, spawnPosition rl.Vector2, rotation float32, s
 	state.Bullets = append(state.Bullets, bullet)
 }
 
-func SpawnAsteroid(state *GameState, spawnPosition rl.Vector2, rotation float32, speed float32, scale float32) {
-	var asteroid = NewAsteroid(spawnPosition, rotation, scale, speed)
+func SpawnAsteroid(state *GameState, spawnPosition rl.Vector2, rotation float32, speed float32, size AsteroidSize) {
+	var asteroid = NewAsteroid(spawnPosition, rotation, size, speed)
 	state.Asteroids = append(state.Asteroids, asteroid)
 }
 
