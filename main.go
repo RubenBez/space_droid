@@ -243,18 +243,18 @@ func RestartGame(data *GameData) {
 	data.Asteroids = []*Asteroid{}
 
 	data.Player = nil
-	data.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 4)
+	data.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 2)
 
-	//SpawnAsteroid(data, rl.NewVector2(150, 150), float32(0), 0, Small)
+	SpawnAsteroid(data, rl.NewVector2(150, 150), float32(0), 0, Small)
 	//SpawnAsteroid(data, rl.NewVector2(150, 250), float32(0), 0, Medium)
 	//SpawnAsteroid(data, rl.NewVector2(150, 350), float32(0), 0, Large)
-	for range 10 {
-		var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
-		var x = rl.GetRandomValue(0, int32(screenWidth)/2)
-		var y = rl.GetRandomValue(0, int32(screenHeight)/2)
-		var rotation = rl.GetRandomValue(0, 360)
-		SpawnAsteroid(data, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
-	}
+	//for range 10 {
+	//	var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
+	//	var x = rl.GetRandomValue(0, int32(screenWidth)/2)
+	//	var y = rl.GetRandomValue(0, int32(screenHeight)/2)
+	//	var rotation = rl.GetRandomValue(0, 360)
+	//	SpawnAsteroid(data, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
+	//}
 }
 
 func ProcessCollision(data *GameData) {
@@ -332,11 +332,12 @@ func ProcessBullets(data *GameData) {
 
 func ProcessPlayer(data *GameData) {
 	var player = data.Player
+	const drag = 0.015
 
 	var theta = float64(DegToRad(player.Rotation))
 	var lookDirection = rl.NewVector2(float32(math.Cos(theta)), float32(math.Sin(theta)))
 	if rl.IsKeyDown(rl.KeyW) || rl.IsKeyDown(rl.KeyUp) {
-		player.Position = rl.Vector2Add(player.Position, rl.Vector2Multiply(rl.Vector2Normalize(lookDirection), rl.NewVector2(player.Speed, player.Speed)))
+		player.Velocity = rl.Vector2Add(player.Velocity, rl.Vector2Scale(lookDirection, player.Speed*rl.GetFrameTime()))
 	}
 
 	if rl.IsKeyDown(rl.KeyA) || rl.IsKeyDown(rl.KeyLeft) {
@@ -351,6 +352,9 @@ func ProcessPlayer(data *GameData) {
 		rl.PlaySound(data.FxShoot)
 		SpawnBullet(data, player.Position, player.Rotation, 8)
 	}
+
+	player.Velocity = rl.Vector2Scale(player.Velocity, 1-drag)
+	player.Position = rl.Vector2Add(player.Position, player.Velocity)
 
 	data.Player.Position = WrapCoordinates(data.Player.Position)
 

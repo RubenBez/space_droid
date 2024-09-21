@@ -7,6 +7,7 @@ type PlayerShip struct {
 	Rotation     float32
 	Scale        float32
 	Speed        float32
+	Velocity     rl.Vector2
 	RenderPoints []rl.Vector2
 }
 
