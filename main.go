@@ -245,16 +245,16 @@ func RestartGame(data *GameData) {
 	data.Player = nil
 	data.Player = NewPlayerShip(rl.NewVector2(screenCenterX, screenCenterY), 0, 20.0, 2)
 
-	SpawnAsteroid(data, rl.NewVector2(150, 150), float32(0), 0, Small)
+	//SpawnAsteroid(data, rl.NewVector2(150, 150), float32(0), 0, Small)
 	//SpawnAsteroid(data, rl.NewVector2(150, 250), float32(0), 0, Medium)
 	//SpawnAsteroid(data, rl.NewVector2(150, 350), float32(0), 0, Large)
-	//for range 10 {
-	//	var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
-	//	var x = rl.GetRandomValue(0, int32(screenWidth)/2)
-	//	var y = rl.GetRandomValue(0, int32(screenHeight)/2)
-	//	var rotation = rl.GetRandomValue(0, 360)
-	//	SpawnAsteroid(data, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
-	//}
+	for range 10 {
+		var size = AsteroidSize(rl.GetRandomValue(int32(Small), int32(Large)))
+		var x = rl.GetRandomValue(0, int32(screenWidth)/2)
+		var y = rl.GetRandomValue(0, int32(screenHeight)/2)
+		var rotation = rl.GetRandomValue(0, 360)
+		SpawnAsteroid(data, rl.NewVector2(float32(x), float32(y)), float32(rotation), 1, size)
+	}
 }
 
 func ProcessCollision(data *GameData) {
